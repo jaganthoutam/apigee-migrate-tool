@@ -26,21 +26,31 @@ grunt.registerTask('exportProducts', 'Export all products from org ' + (process.
     if (products.length === 0) {
         grunt.verbose.writeln("No Products");
         done();
+        return; // Exit the task since there are no products to process
     }
 
-    for (var i = 0; i < products.length; i++) {
-        var product_url = url + "/" + products[i];
+    function processProduct(index) {
+        if (index >= products.length) {
+            grunt.log.ok('Processed ' + done_count + ' products');
+            grunt.verbose.writeln("================== export products DONE()");
+            done();
+            return;
+        }
+
+        var product_url = url + "/" + products[index];
         grunt.file.mkdir(filepath);
 
         //Call product details
         grunt.verbose.writeln("PRODUCT URL: " + product_url.length + " " + product_url);
+
         // An Edge bug allows products to be created with very long names which cannot be used in URLs.
         if (product_url.length > 1024) {
             grunt.log.write("SKIPPING Product, URL too long: ");
             done_count++;
+            processProduct(index + 1);
         } else {
             request(product_url, function(error, response, body) {
-                if (!error && response.statusCode == 200) {
+                if (!error && response.statusCode === 200) {
                     grunt.verbose.writeln("PRODUCT " + body);
                     var product_detail = JSON.parse(body);
                     var dev_file = filepath + "/" + product_detail.name;
@@ -48,21 +58,19 @@ grunt.registerTask('exportProducts', 'Export all products from org ' + (process.
 
                     grunt.verbose.writeln('Exported Product ' + product_detail.name);
                 } else {
-                    grunt.verbose.writeln('Error Exporting Product ' + product_detail.name);
+                    grunt.verbose.writeln('Error Exporting Product ' + products[index]);
                     grunt.log.error(error);
                 }
 
                 done_count++;
-                if (done_count == products.length) {
-                    grunt.log.ok('Processed ' + done_count + ' products');
-                    grunt.verbose.writeln("================== export products DONE()");
-                    done();
-                }
+                processProduct(index + 1);
             }).auth(userid, passwd, true);
         }
-        // End product details
     }
+
+    processProduct(0);
 });
+
 
 
 	grunt.registerMultiTask('importProducts', 'Import all products to org ' + apigee.to.org + " [" + apigee.to.version + "]", function() {
