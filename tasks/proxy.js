@@ -4,84 +4,82 @@ var apigee = require('../config.js');
 var proxies;
 module.exports = function(grunt) {
 	'use strict';
-	grunt.registerTask('exportProxies', 'Export all proxies from org ' + apigee.from.org + " [" + apigee.from.version + "]", function() {
-		var url = apigee.from.url;
-		var org = apigee.from.org;
-		var userid = apigee.from.userid;
-		var passwd = apigee.from.passwd;
-		var fs = require('fs');
-		var filepath = grunt.config.get("exportProxies.dest.data");
-		var done_count =0;
-		var done = this.async();
+	
+grunt.registerTask('exportProxies', 'Export all proxies from org ' + apigee.from.org + " [" + apigee.from.version + "]", function() {
+    var url = apigee.from.url;
+    var org = apigee.from.org;
+    var userid = apigee.from.userid;
+    var passwd = apigee.from.passwd;
+    var fs = require('fs');
+    var filepath = grunt.config.get("exportProxies.dest.data");
+    var done_count = 0;
+    var done = this.async();
 
-		grunt.verbose.writeln("========================= export Proxies ===========================" );
-		grunt.verbose.writeln("getting proxies..." + url);
-		url = url + "/v1/organizations/" + org + "/apis";
+    grunt.verbose.writeln("========================= export Proxies ===========================");
+    grunt.verbose.writeln("getting proxies..." + url);
 
-		request(url, function (error, response, body) {
-			if (!error && response.statusCode == 200) {
-			    proxies =  JSON.parse(body);
-			   
-			    for (var i = 0; i < proxies.length; i++) {
-			    	var proxy_url = url + "/" + proxies[i];
-			    	grunt.file.mkdir(filepath);
+    // Get the proxies from a CSV file or use the default file "proxies.csv"
+    var proxiesCSVFile = grunt.option('proxiesCSVFile') || 'proxies.csv'; // Use --proxiesCSVFile=path/to/proxies.csv to specify the CSV file path or use the default "proxies.csv"
 
-			    	//Call proxy details
-					request(proxy_url, function (error, response, body) {
-						if (!error && response.statusCode == 200) {
-							grunt.verbose.writeln(body);
-						    var proxy_detail =  JSON.parse(body);
-                            // var proxy_file = filepath + "/" + proxy_detail.name;
-						    // gets max revision - May not be the deployed version
-						    var max_rev = proxy_detail.revision[proxy_detail.revision.length -1];
+    // Read proxies from the CSV file
+    var csv = fs.readFileSync(proxiesCSVFile, 'utf-8');
+    var proxies = csv.split('\n').map(function(proxy) {
+        return proxy.trim();
+    });
 
-						    var proxy_download_url = url + "/" + proxy_detail.name + "/revisions/" + max_rev + "?format=bundle";
-						    grunt.verbose.writeln ("\nFetching proxy bundle  : " + proxy_download_url);
+    var totalProxies = proxies.length;
 
-						    request(proxy_download_url).auth(userid, passwd, true)
-							  .pipe(fs.createWriteStream(filepath + "/" + proxy_detail.name + '.zip'))
-							  .on('close', function () {
-							    
-							    grunt.verbose.writeln('Proxy ' + proxy_detail.name + '.zip written!');
-							    done_count++;
-								if (done_count == proxies.length)
-								{
-									grunt.log.ok('Exported ' + done_count + ' proxies.');
-                                    grunt.verbose.writeln("================== export proxies DONE()" );
-									done();
-								}
-							});
-						}
-						else
-						{
-							done_count++;
-							if (done_count == proxies.length)
-							{
-								grunt.verbose.writeln('Error exporting ' + done_count + ' proxies.');
-								// done();
-							} else {
-								grunt.verbose.writeln('Error exporting' + proxy_detail.name);
-							}
-							grunt.log.error(error);
-						}
-					}).auth(userid, passwd, true);
-			    	// End proxy details
-			    }; 			    
-			} 
-			else
-			{
-				grunt.log.error(error);
-			}
-		}).auth(userid, passwd, true);
-		/*
-		setTimeout(function() {
-		    grunt.verbose.writeln("================== Proxies Timeout done" );
-		    done(true);
-		}, 5000);
-		grunt.verbose.writeln("========================= export Proxies DONE ===========================" );
-		*/
+    proxies.forEach(function(proxyName) {
+        var proxy_url = url + "/" + proxyName;
+        grunt.file.mkdir(filepath);
 
-	});
+        // Call proxy details
+        request(proxy_url, function (error, response, body) {
+            if (!error && response.statusCode == 200) {
+                grunt.verbose.writeln(body);
+                var proxy_detail = JSON.parse(body);
+                var isDeployed = proxy_detail.isDeployed; // Check if the proxy is deployed
+                if (isDeployed) {
+                    var max_rev = proxy_detail.revision[proxy_detail.revision.length - 1];
+                    var proxy_download_url = url + "/" + proxy_detail.name + "/revisions/" + max_rev + "?format=bundle";
+                    grunt.verbose.writeln("\nFetching proxy bundle  : " + proxy_download_url);
+
+                    request(proxy_download_url).auth(userid, passwd, true)
+                        .pipe(fs.createWriteStream(filepath + "/" + proxy_detail.name + '.zip'))
+                        .on('close', function () {
+                            grunt.verbose.writeln('Proxy ' + proxy_detail.name + '.zip written!');
+                            done_count++;
+                            if (done_count == totalProxies) {
+                                grunt.log.ok('Exported ' + done_count + ' proxies.');
+                                grunt.verbose.writeln("================== export proxies DONE()" );
+                                done();
+                            }
+                        });
+                } else {
+                    done_count++;
+                    if (done_count == totalProxies) {
+                        grunt.verbose.writeln('No deployed proxies found for export.');
+                        done();
+                    } else {
+                        grunt.verbose.writeln('Proxy ' + proxy_detail.name + ' is not deployed.');
+                    }
+                }
+            }
+            else {
+                done_count++;
+                if (done_count == totalProxies) {
+                    grunt.verbose.writeln('Error exporting ' + done_count + ' proxies.');
+                    done();
+                } else {
+                    grunt.verbose.writeln('Error exporting ' + proxyName);
+                }
+                grunt.log.error(error);
+            }
+        }).auth(userid, passwd, true);
+        // End proxy details
+    });
+});
+
 
 	grunt.registerMultiTask('importProxies', 'Import all proxies to org ' + apigee.to.org + " [" + apigee.to.version + "]", function() {
 		var url = apigee.to.url;
