@@ -4,80 +4,66 @@ var apigee = require('../config.js');
 var products;
 module.exports = function(grunt) {
 	'use strict';
-	grunt.registerTask('exportProducts', 'Export all products from org ' + apigee.from.org + " [" + apigee.from.version + "]", function() {
-		var url = apigee.from.url;
-		var org = apigee.from.org;
-		var userid = apigee.from.userid;
-		var passwd = apigee.from.passwd;
-		var filepath = grunt.config.get("exportProducts.dest.data");
-		var done_count =0;
-		var done = this.async();
-		grunt.verbose.writeln("========================= export Products ===========================" );
 
-		grunt.verbose.writeln("getting products..." + url);
-		url = url + "/v1/organizations/" + org + "/apiproducts";
+grunt.registerTask('exportProducts', 'Export all products from org ' + (process.env.ARG || 'product.csv'), function() {
+    var url = apigee.from.url;
+    var org = apigee.from.org;
+    var userid = apigee.from.userid;
+    var passwd = apigee.from.passwd;
+    var filepath = grunt.config.get("exportProducts.dest.data");
+    var done_count = 0;
+    var done = this.async();
+    grunt.verbose.writeln("========================= export Products ===========================");
 
-		request(url, function (error, response, body) {
-			if (!error && response.statusCode == 200) {
-				grunt.log.write("PRODUCTS: " + body);
-			    products =  JSON.parse(body);
-			    
-			    if( products.length == 0 ) {
-			    	grunt.verbose.writeln("No Products");
-			    	done();
-			    }
-			    for (var i = 0; i < products.length; i++) {
-			    	var product_url = url + "/" + products[i];
-			    	grunt.file.mkdir(filepath);
+    grunt.verbose.writeln("getting products..." + url);
 
-			    	//Call product details
-			    	grunt.verbose.writeln("PRODUCT URL: " + product_url.length + " " + product_url);
-			    	// An Edge bug allows products to be created with very long names which cannot be used in URLs.
-			    	if( product_url.length > 1024 ) {
-			    		grunt.log.write("SKIPPING Product, URL too long: ");
-			    		done_count++;
-			    	} else {
-						request(product_url, function (error, response, body) {
-							if (!error && response.statusCode == 200) {
-								grunt.verbose.writeln("PRODUCT " + body);
-							    var product_detail =  JSON.parse(body);
-							    var dev_file = filepath + "/" + product_detail.name;
-							    grunt.file.write(dev_file, body);
+    var productsSource = process.env.ARG || 'product.csv';
 
-							    grunt.verbose.writeln('Exported Product ' + product_detail.name);
-							}
-							else
-							{
-								grunt.verbose.writeln('Error Exporting Product ' + product_detail.name);
-								grunt.log.error(error);
-							}
+    // Assuming you have a function to read products from a CSV file
+    // You can replace the "readProductsFromCSV" function with the appropriate code
+    var products = readProductsFromCSV(productsSource);
 
-							done_count++;
-							if (done_count == products.length)
-							{
-								grunt.log.ok('Processed ' + done_count + ' products');
-	                            grunt.verbose.writeln("================== export products DONE()" );
-								done();
-							}
-						}).auth(userid, passwd, true);
-					}
-			    	// End product details
-			    };
-			    
-			} 
-			else
-			{
-				grunt.log.error(error);
-			}
-		}).auth(userid, passwd, true);
-		/*
-		setTimeout(function() {
-		    grunt.verbose.writeln("================== Products Timeout done" );
-		    done(true);
-		}, 10000);
-		grunt.verbose.writeln("========================= export Products DONE ===========================" );
-		*/
-	});
+    if (products.length === 0) {
+        grunt.verbose.writeln("No Products");
+        done();
+    }
+
+    for (var i = 0; i < products.length; i++) {
+        var product_url = url + "/" + products[i];
+        grunt.file.mkdir(filepath);
+
+        //Call product details
+        grunt.verbose.writeln("PRODUCT URL: " + product_url.length + " " + product_url);
+        // An Edge bug allows products to be created with very long names which cannot be used in URLs.
+        if (product_url.length > 1024) {
+            grunt.log.write("SKIPPING Product, URL too long: ");
+            done_count++;
+        } else {
+            request(product_url, function(error, response, body) {
+                if (!error && response.statusCode == 200) {
+                    grunt.verbose.writeln("PRODUCT " + body);
+                    var product_detail = JSON.parse(body);
+                    var dev_file = filepath + "/" + product_detail.name;
+                    grunt.file.write(dev_file, body);
+
+                    grunt.verbose.writeln('Exported Product ' + product_detail.name);
+                } else {
+                    grunt.verbose.writeln('Error Exporting Product ' + product_detail.name);
+                    grunt.log.error(error);
+                }
+
+                done_count++;
+                if (done_count == products.length) {
+                    grunt.log.ok('Processed ' + done_count + ' products');
+                    grunt.verbose.writeln("================== export products DONE()");
+                    done();
+                }
+            }).auth(userid, passwd, true);
+        }
+        // End product details
+    }
+});
+
 
 	grunt.registerMultiTask('importProducts', 'Import all products to org ' + apigee.to.org + " [" + apigee.to.version + "]", function() {
 		var url = apigee.to.url;
